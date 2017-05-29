@@ -1,0 +1,443 @@
+#!/usr/bin/python
+#some libraries to be imported
+import requests
+import json
+import getpass
+import time
+def Cluster_Redundancy_check(Clusters_url,session):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	cluster_health=session.get(Clusters_url, verify=False).json()
+	#print(cluster_health)
+	for n in cluster_health["entities"]:
+		current_RF=n["cluster_redundancy_state"]["current_redundancy_factor"]
+		desired_RF=n["cluster_redundancy_state"]["desired_redundancy_factor"]
+	if(current_RF==desired_RF):
+		print("Desired configured cluster state is maintained, data resiliency is maintained.")
+	else:
+		print("Desired configured cluster state can not be maintained, data resiliency is not maintained, please consult the support")
+
+def Modify_containers(Containers_list,containers_edit_url,session):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	PrintContainers(Containers_list)
+	print("")
+	container_selected_uuid=raw_input("Please choose the UUID of the container: ")
+	print("")
+	container_selected_name=raw_input("Please choose the container's name: ")
+	print("")
+	answer=raw_input("Would you like to enable/disbale compression? [e/d]")
+	if answer == "e":
+		put_body="""
+		{
+		"compression_delay_in_secs": 3600, 
+		"compression_enabled": true,
+		"erasure_code": "off",
+		"finger_print_on_write": "NONE",
+		"health_summary": {
+			"entity_type_summaries": [
+				{
+					"checks_in_error": {},
+					"detailed_check_summary": {},
+					"entity_type": "CLUSTER",
+					"filter_criteria": "string",
+					"health_summary": {}
+				}
+			],
+			"health_check_summaries": {},
+			"health_status": "Critical"
+		},
+		"storage_container_uuid": "%s",
+		"name":"%s",
+		"usage_stats": {}}"""%(container_selected_uuid,container_selected_name)
+		session.put(containers_edit_url, data=put_body).json()
+	else:
+		put_body="""
+		{
+		"compression_delay_in_secs": 3600, 
+		"compression_enabled": false,
+		"erasure_code": "off",
+		"finger_print_on_write": "NONE",
+		"health_summary": {
+			"entity_type_summaries": [
+				{
+					"checks_in_error": {},
+					"detailed_check_summary": {},
+					"entity_type": "CLUSTER",
+					"filter_criteria": "string",
+					"health_summary": {}
+				}
+			],
+			"health_check_summaries": {},
+			"health_status": "Critical"
+		},
+		"storage_container_uuid": "%s",
+		"name":"%s",
+		"usage_stats": {}}"""%(container_selected_uuid,container_selected_name)
+		session.put(containers_edit_url, data=put_body).json()
+
+def PrintVMNetworkDetails(x,y):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	VM_info= y.get(x, verify=False).json()
+	for n in VM_info["entities"]:
+		#VM_network_data_from_entities=VM_info["entities"]
+	    #print(n["mac_address"])
+	    print("The MAC address for VM NIC is"+str(n["mac_address"])+" and its IP address is " +str(n["requested_ip_address"]))	
+def PrintTaskList(x):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	print("The tasks that are listed in the task list are:")
+	for n in x["entities"]:
+		print("Task title:---> "+n["operation_type"]+" and its progress status is " +str(n["progress_status"])+ ".Its completion percentage is " + str(n["percentage_complete"]))
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+
+def PrintCluster(x):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	for n in x["entities"]:
+		print("Cluster name:---> "+n["name"]+"  its Virtual IP is " +str(n["cluster_external_ipaddress"])+ " and its external data service IP is " + str(n["cluster_external_data_services_ipaddress"]))
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+
+def ChangeClusterExternalServicesIP(x,y):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	New_IP = raw_input("Please specify a new external management services IP in a.b.c.d format: ")
+	putbody="""{
+		"name":"Walid_Cluster",
+		"clusterExternalDataServicesIPAddress":"%s"
+		}"""%(New_IP)
+	y.put(x, data=putbody).json()
+
+#function for printing list of Networks
+def PrintNetworks(x):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	for n in x["entities"]:
+		print(" The current available Networks and their VLANs are: ")
+		print("Network name:---> "+n["name"]+"---> and its vlan id is " +str(n["vlan_id"])+" Network UUID is "+str(n["uuid"]))
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+
+def CreateNetworks(x,y):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	vlan_Name = raw_input("Please specify a new vlan name: ")
+	print("")
+	vlan_Id = raw_input("Please specify the new vlan ID: ")
+	print("")
+	network_address=raw_input("Please specify the subnet ID in a.b.c.d format: ")
+	print("")
+	network_subnet=int(raw_input("Please specify the prefix length: "))
+	print("")
+	gateway=raw_input("Please specify the Gateway's IP in pool ID in a.b.c.d format: ")
+	print("")
+	firstIP=raw_input("Please specify the first IP in pool ID in a.b.c.d format: ")
+	print("")
+	lastIP=raw_input("Please specify the last IP in pool ID in a.b.c.d format: ")
+	#Defining the message body that will be POSTed via API call in JSON format
+	newnetwork = """{
+	    "name": "%s",
+	    "vlan_id": "%s",
+	    "ip_config":{
+	     "network_address":"%s",
+	     "prefix_length": %d,
+	     "default_gateway":"%s",
+	     "pool":[
+		{
+		   "range":"%s %s"
+		}
+	     ]
+	}
+	}""" %(vlan_Name,vlan_Id,network_address,network_subnet,gateway,firstIP,lastIP)
+	z=y.post(x, data=newnetwork).json()
+
+
+#function for printing list of VMs
+def PrintVMs(x):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	for n in x["entities"]:
+		print(" The current available VMs and their UUIDs are: ")
+		print("VM name:---> "+n["name"]+"---> and its uuid is " +str(n["uuid"])+ ",it's current power state is  "+ n["power_state"])
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+
+
+def PrintISOs(x):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	for n in x["entities"]:
+		print(" The current available ISOs and their VMdisk UUIDs are: ")
+		print("ISO name:---> "+n["name"]+"---> and its VMdisk_uuid is " +str(n["vm_disk_id"]))
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+#function for printing list of Containers	
+def PrintContainers(x):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	for n in x["entities"]:
+		print(" The current available Storage containers and their UUIDs are: ")
+		print("Storage Container name:---> "+n["name"]+"---> and its storage container uuid is " +str(n["storage_container_uuid"])+ " and the current status for compression setting is  "+ str(n["compression_enabled"]))
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+#function for creating a VM	
+def CreateVM(y,z):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	Target_ISO= raw_input("Please choose the VM ISO type, type in the exact UUID:  ")
+	print("")
+	Target_Container= raw_input("Please choose the container to host the VM vdisk, enter the storage container UUID:  ")
+	print("")
+	guestos= raw_input("Please enter the Guest OS type: ")
+	print("")
+	ram= int(raw_input("Please enter the VM RAM size in Mb: "))
+	print("")
+	corespervCPU= int(raw_input("Please enter the number of cores per vCPU: "))
+	print("")
+	numberofvCPUs= int(raw_input("Please enter the number of vCPUs: "))
+	print("")
+	VM_name= raw_input("Please enter the VM name:  ")
+	print("")
+	disk_size= raw_input("Enter the VM disk size in TB: ")
+	print("")
+	disk_right_sized = 1024*1024*1024*int(disk_size)
+	print("")
+	Network= raw_input("Please enter the Network UUID:  ")
+	newvm="""{
+		"description": "We love API",
+		"guest_os": "%s",
+		"memory_mb": %d,
+		"name": "%s",
+		"num_cores_per_ vcpu": %d,
+		"num_vcpus": %d,
+		"vm_disks": [{
+			"disk_address": {
+				"device_bus": "ide",
+				"device_index": 0
+			},
+			"is_cdrom": true,
+			"is_empty": false,
+			"vm_disk_clone": {
+				"disk_address": {
+					"vmdisk_uuid": "%s"
+				}
+			}
+		}, {
+			"disk_address": {
+				"device_bus": "scsi",
+				"device_index": 0
+			},
+			"vm_disk_create": {
+				"storage_container_uuid": "%s",
+				"size": %d
+			}
+		}, {
+			"disk_address": {
+				"device_bus": "ide",
+				"device_index": 1
+			},
+			"is_ cdrom": true,
+			"is_empty": false,
+			"vm_disk_clone": {
+				"disk_address": {
+					"vmdisk_uuid": "82f8dd29-13a5-401b-8411-2575e197ce2d"
+				}
+			}
+		}],
+		"vm_nics": [
+			{
+			  "network_uuid": "%s"
+			}
+			],
+		" hypervisor_type": "ACROPOLIS",
+		"affinity": null
+	}""" %(guestos,ram,VM_name,corespervCPU,numberofvCPUs,Target_ISO,Target_Container,disk_right_sized,Network)
+	y=z.post(y, data=newvm).json()
+#function to power ON VM
+def PowerONvm(x,y,z):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	print("")
+	print("This is a list of the powered OFF machines")
+	for n in x["entities"]:
+		if n["power_state"]== "off":
+			print("VM name:---> "+n["name"]+"---> and its uuid is " +str(n["uuid"])+ " is powered off.")
+	desired_vm=raw_input("Please enter the UUID of the VM to be powered on: ")	
+	poweroff_url= y+"/"+desired_vm+"/set_power_state"		
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	print("Powering On..")
+	post_body="""
+	{
+		"transition": "ON",
+		"uuid": "%s"
+	}"""%(desired_vm)
+	output=z.post(poweroff_url, data=post_body).json()
+#function to power OFF VM	
+def PowerOFFvm(x,y,z):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	print("")
+	print("This is a list of the powered ON machines")
+	for n in x["entities"]:
+		if n["power_state"]== "on":
+			print("VM name:---> "+n["name"]+"---> and its uuid is " +str(n["uuid"])+ " is powered on.")
+	desired_vm=raw_input("Please enter the UUID of the VM to be powered off: ")	
+	poweron_url= y+"/"+desired_vm+"/set_power_state"		
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	print("Powering Off..")
+	post_body="""
+	{
+		"transition": "OFF",
+		"uuid": "%s"
+	}"""%(desired_vm)
+	output=z.post(poweron_url, data=post_body).json()
+#function to delete a VM	
+def DeleteVM(x,y,z):
+	print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+	print("")
+	print("This is a list of the Virtual machines in the system: ")
+	for n in x["entities"]:
+		print("VM name:---> "+n["name"]+"---> and its uuid is " +str(n["uuid"]))
+	desired_vm=raw_input("Please enter the UUID of the VM to be powered off: ")	
+	print("")
+	print("Deleting your requested VM.")
+	delete_url= y+"/"+desired_vm+"/?delete_snapshots=false"
+	post_body="""
+	{
+		"task_uuid": "%s"
+	}"""%(desired_vm)
+	output=z.delete(delete_url, data=post_body)	
+			
+print("***************************************************************************************************************")
+print("Welcome to the technical summit in Athens 2017, table 12 welcomes you.")	
+print("***************************************************************************************************************")
+print("This code will guide you through the lifecycle of the VM from creation to deleteion.")
+print("***************************************************************************************************************")
+#cluster_IP = raw_input("Please enter the cluster management IP: ")
+#userName = raw_input("Username: ")
+#passWord = getpass.getpass('password: ')
+cluster_IP = "10.68.69.102"
+userName = "admin"
+passWord = "W@lid123"
+#Formatting the API URLs using the user parameter
+VM_list_URL = ("https://" + str(cluster_IP)+":9440/PrismGateway/services/rest/v2.0/vms")
+ISO_list_URL = ("https://" + str(cluster_IP)+":9440/PrismGateway/services/rest/v2.0/images")
+Containers_list_URL = ("https://" + str(cluster_IP)+":9440/PrismGateway/services/rest/v2.0/storage_containers")
+Networks_url = ("https://" + str(cluster_IP)+":9440/PrismGateway/services/rest/v2.0/networks")
+Clusters_url = ("https://" + str(cluster_IP)+":9440/PrismGateway/services/rest/v2.0/clusters")
+Clusters_url2 = ("https://"+ str(cluster_IP)+":9440/PrismGateway/services/rest/v1/cluster")
+Tasks_url = ("https://"+ str(cluster_IP)+":9440/PrismGateway/services/rest/v2.0/tasks/list")
+#disbales the HTTPS certificate warnings
+requests.packages.urllib3.disable_warnings()
+#creating variable "s" which is our session using the requests library
+session = requests.Session()
+#Defining the session authentication parameters
+session.auth = (userName,passWord)
+#Defining the right encoding and format (JSON)
+session.headers.update({'Content-Type': 'application/json; charset=utf-8'})
+#Executing  GET requests to collect VMs/isos/containers list
+print("Successfully logged into the cluster, configuration has been retrieved")
+user_input = 100
+while user_input != 0:
+	print("")
+	print("")
+	print("----------------------------------------------------------------")
+	print("How can we help you today??")
+	print("1-To view the available VMs and their power state.")
+	print("2-To view the available ISOs in the imaging service.")
+	print("3-To view the available storage containers")
+	print("4-To create a new VM. You will be prompted for more parameters!!")
+	print("5-To power ON a VM.")
+	print("6-To power OFF a VM.")
+	print("7-To delete a VM.")
+	print("8-To display the current available networks.")
+	print("9-To create a new Network.")
+	print("10-To display cluster name and its external IP address.")
+	print("11-To change the cluster IP external address:")
+	print("12-To display the task list")
+	print("13-To display VMs IP information")
+	print("14-Enable/Disable compression on your containers")
+	print("15-Display Cluster redundancy state")
+	print("99-To terminate")
+	print("----------------------------------------------------------------")
+	VM_list = session.get(VM_list_URL, verify=False).json()
+	ISO_list = session.get(ISO_list_URL, verify=False).json()
+	Containers_list = session.get(Containers_list_URL, verify=False).json()
+	Networks_list = session.get(Networks_url, verify=False).json()
+	Clusters_list = session.get(Clusters_url, verify=False).json()
+	data_to_post="{}"
+	Tasks_List = session.post(Tasks_url, verify=False, data=data_to_post).json()
+	user_input=int(raw_input("Please select a choice from 1 to 99: "))
+	if user_input==1:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintVMs(VM_list)
+	elif user_input==2:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintISOs(ISO_list)
+	elif user_input==3:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintContainers(Containers_list)
+	elif user_input==4:
+		condition = True
+		while condition == True:
+			PrintISOs(ISO_list)
+			print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			PrintContainers(Containers_list)
+			print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			PrintNetworks(Networks_list)
+			print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			CreateVM(VM_list_URL,session)
+			print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			print("Creating your VM, please wait...")
+			print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			VM_list = session.get(VM_list_URL, verify=False).json()
+			PrintVMs(VM_list)
+			input2=raw_input("Would you like to create a new VM? [y/n]")
+			if input2 == "y":
+				condition = True
+			else:
+				condition = False
+		
+	elif user_input==5:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PowerONvm(VM_list,VM_list_URL,session)
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		VM_list = session.get(VM_list_URL, verify=False).json()
+		PrintVMs(VM_list)
+	elif user_input==6:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PowerOFFvm(VM_list,VM_list_URL,session)
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		VM_list = session.get(VM_list_URL, verify=False).json()
+		PrintVMs(VM_list)
+	elif user_input==7:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		DeleteVM(VM_list,VM_list_URL,session)
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		VM_list = session.get(VM_list_URL, verify=False).json()
+		PrintVMs(VM_list)
+	elif user_input==8:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintNetworks(Networks_list)
+	elif user_input==9:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintNetworks(Networks_list)
+		CreateNetworks(Networks_url,session)
+		print("creating your network:")
+		Networks_list = session.get(Networks_url, verify=False).json()
+		PrintNetworks(Networks_list)
+	elif user_input==10:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintCluster(Clusters_list)
+		print("")
+	elif user_input==11:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		ChangeClusterExternalServicesIP(Clusters_url2,session)
+	elif user_input==12:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintTaskList(Tasks_List)
+	elif user_input==13:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		PrintVMs(VM_list)
+		print("")
+		vm_uuid=raw_input("Please choose the VM's UUID to review its networking settings: ")
+		modified_url=VM_list_URL+"/"+vm_uuid+"/nics/?include_address_assignments=true"
+		PrintVMNetworkDetails(modified_url,session)	
+	elif user_input==14:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		Modify_containers(Containers_list,Containers_list_URL,session)
+	elif user_input==15:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		Cluster_Redundancy_check(Clusters_url,session)	
+	elif user_input==99:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		print("It was pleasure meeting all of you guys, wish you all a safe trip, see you in VEGAS!!!")
+		user_input=0
+	else:
+		print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+		print("It seems you had a heavy lunch, you pressed something wrong, have another look at the menu :D ")
+
+
